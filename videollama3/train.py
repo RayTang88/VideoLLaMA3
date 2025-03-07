@@ -38,7 +38,7 @@ from datasets import load_dataset, concatenate_datasets
 from torch.utils.data import Dataset
 from transformers.models.mixtral.modeling_mixtral import MixtralSparseMoeBlock
 
-sys.path.append('./')
+sys.path.append('/data0/tc_workspace/internlm/code/VideoLLaMA3')
 
 from videollama3.constants import (IGNORE_INDEX,
     NUM_FRAMES, DEFAULT_IMAGE_TOKEN, STREAM_MAX_FRAMES,

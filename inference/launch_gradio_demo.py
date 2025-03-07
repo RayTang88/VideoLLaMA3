@@ -11,7 +11,7 @@ from inference.server import VideoLLaMA3PlainClient
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-path", "--model_path", type=str, required=True)
+    parser.add_argument("--model-path", "--model_path", type=str, default="/data0/tc_workspace/internlm/model/VideoLLaMA3-7B/")
     parser.add_argument("--server-port", "--server_port", type=int, default=16667)
     parser.add_argument("--interface-port", "--interface_port", type=int, default=9999)
     parser.add_argument("--nproc", type=int, default=1)

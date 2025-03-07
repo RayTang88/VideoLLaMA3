@@ -1,7 +1,7 @@
 #!/bin/bash
 # Environment Variables
 ARG_WORLD_SIZE=${1:-1}
-ARG_NPROC_PER_NODE=${2:-8}
+ARG_NPROC_PER_NODE=${1:-4}
 ARG_MASTER_ADDR="127.0.0.1"
 ARG_MASTER_PORT=16667
 ARG_RANK=0
@@ -30,7 +30,7 @@ echo $GRADIENT_ACCUMULATION_STEPS
 export WANDB_PROJECT=videollama3_qwen2.5_2b
 PRECEDING_RUN_NAME=stage_3
 RUN_NAME=stage_4
-DATA_DIR=DATASETS/STAGE4
+DATA_DIR=/data0/tc_workspace/internlm/code/VideoLLaMA3/data
 OUTP_DIR=work_dirs
 
 torchrun --nnodes $WORLD_SIZE \
@@ -41,10 +41,10 @@ torchrun --nnodes $WORLD_SIZE \
     videollama3/train.py \
     --deepspeed scripts/zero1.json \
     --model_type videollama3_qwen2 \
-    --model_path ${OUTP_DIR}/${WANDB_PROJECT}/${PRECEDING_RUN_NAME} \
+    --model_path /data0/tc_workspace/internlm/model/VideoLLaMA3-2B \
     --vision_encoder DAMO-NLP-SG/SigLIP-NaViT \
     --mm_projector_type mlp2x_gelu \
-    --data_path ${DATA_DIR}/annotations.jsonl \
+    --data_path ${DATA_DIR}/child_llama3_test.jsonl \
     --data_folder ${DATA_DIR} \
     --image_merge_size 2 \
     --video_merge_size 2 \
@@ -75,4 +75,4 @@ torchrun --nnodes $WORLD_SIZE \
     --dataloader_num_workers 16 \
     --report_to tensorboard \
     --run_name $RUN_NAME \
-    --dataset_cache_dir /mnt/damovl/DAMOVL_DATASETS/.cache
+    --dataset_cache_dir /data0/tc_workspace/data/vlm_data/child_data/.cache
