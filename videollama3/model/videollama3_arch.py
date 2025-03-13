@@ -296,7 +296,7 @@ class Videollama3MetaForCausalLM(ABC):
 
         # 2. embed visual tokens
         batched_num_patches = grid_sizes.prod(dim=1).div(merge_sizes ** 2).long()
-        mm_features = self.encode_images(pixel_values, grid_sizes, merge_sizes)
+        mm_features = self.encode_images(pixel_values, grid_sizes, merge_sizes).to(input_ids.device)
         mm_features = self._get_valid_visual_tokens(mm_features, batched_num_patches, modals)
 
         compression_mask = self._get_compression_mask(
@@ -309,8 +309,8 @@ class Videollama3MetaForCausalLM(ABC):
         # 3. compress visual tokens
         if self.config.use_token_compression:
             assert B == 1, "Token compression is only supported for batch_size=1"
-            mm_features, input_ids, attention_mask, labels, position_ids = self._compress_visual_tokens(
-                compression_mask, mm_features, input_ids, attention_mask, labels, position_ids
+            mm_features, input_ids, attention_mask, position_ids, labels = self._compress_visual_tokens(
+                compression_mask, mm_features, input_ids, attention_mask, position_ids, labels
             )
 
         # 4. embed text tokens
