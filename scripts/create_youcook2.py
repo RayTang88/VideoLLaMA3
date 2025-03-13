@@ -146,9 +146,91 @@ def split_dataset(data):
 def save_to_jsonl(results, jsonl_name):
     train_data, val_data, test_data =split_dataset(results)
     
-    save_jsonl(train_data, jsonl_name.replace(".jsonl", "_train.jsonl"))
-    save_jsonl(val_data, jsonl_name.replace(".jsonl", "_val.jsonl"))
-    save_jsonl(test_data, jsonl_name.replace(".jsonl", "_test.jsonl"))
+    save_jsonl(train_data, jsonl_name.replace(".jsonl", "_pre_train.jsonl"))
+    save_jsonl(val_data, jsonl_name.replace(".jsonl", "_pre_val.jsonl"))
+    save_jsonl(test_data, jsonl_name.replace(".jsonl", "_pre_test.jsonl"))
+
+
+def get_total(eaf_file):
+    xml_content = open(eaf_file, 'r', encoding='utf-8').read()
+    root = ET.fromstring(xml_content)
+    
+    # 提取媒体信息
+    video_path = eaf_file.replace("annotations", "videos").replace(".eaf", ".mp4")
+    if not os.path.exists(video_path):
+        return None
+    
+    media_desc = root.find(".//MEDIA_DESCRIPTOR")
+    video_id = media_desc.get("RELATIVE_MEDIA_URL").split('/')[-1].split('.')[0]
+    # 构建基础数据
+    base_data = {
+        "id": video_id,
+        "video": [video_path]
+    }
+    
+    # 解析时间槽
+    time_slots = {}
+    for ts in root.findall(".//TIME_SLOT"):
+        time_slots[ts.get("TIME_SLOT_ID")] = int(ts.get("TIME_VALUE"))
+    
+    # 处理标注数据
+    annotations = []
+    recipe_types = []
+    segments = []
+    values =""
+    for idx, ann in enumerate(root.findall(".//TIER[@TIER_ID='cls']/ANNOTATION")):
+        align = ann.find("ALIGNABLE_ANNOTATION")
+        ref1, ref2 = align.get("TIME_SLOT_REF1"), align.get("TIME_SLOT_REF2")
+        start, end = float(time_slots[ref1]/1000), float(time_slots[ref2]/1000)
+        recipe_type = align.find("ANNOTATION_VALUE").text
+        
+        recipe_types.append(recipe_type)
+        segments.append([start, end])
+        
+        values+="%.3f-%.3fs, %s;"%(start, end, recipe_type)
+        
+        
+        
+    conversation = [{"from": "human", "value": "<video>\nObserve whether the child in the video exhibits the following behaviors:'cry', 'laugh', 'eat_hands', 'feed', 'eat', 'drink', 'lie', 'fall_backward', 'crawl', 'sit', 'on_feet', 'walk', 'dance', 'jump', 'run'. If any of these behaviors are present, please describe them with their corresponding start and end time points."},{"from": "gpt", "value": values[:-1]}]
+
+    annotations.append({
+        **base_data,
+        "recipe_type": recipe_types,
+        "segment": segments,
+        "conversations":conversation
+    })
+
+    
+    # # 处理未标注时间段
+    # merged = merge_intervals(used_intervals)
+    # all_times = sorted(time_slots.values())
+    # total_range = [all_times[0], all_times[-1]]
+    
+    # gaps = []
+    # prev_end = total_range[0]
+    
+    # ggap = 200
+    # for interval in merged:
+    #     if interval[0] > prev_end and ((interval[0]-prev_end) > ggap):
+    #         #这里增加一个前后缩25帧的策略
+    #         gaps.append([prev_end + int(ggap/8), interval[0]+ int(ggap/8)])
+            
+    #     prev_end = max(prev_end, interval[1])
+    
+    # if gaps:
+    #     selected = random.choice(gaps)
+    #     annotations.append({
+    #         "id": f"{video_id}_other",
+    #         **base_data,
+    #         "recipe_type": "other",
+    #         "segment": selected,
+    #         "sentence": "other"
+    #     })
+    
+    # return '\n'.join(json.dumps(ann) for ann in annotations)
+    return annotations
+
+
 
 if __name__ == "__main__":
     
@@ -159,8 +241,9 @@ if __name__ == "__main__":
     
     results = []
     for eaf_file in tqdm(eaf_lists):
-        result = parse_annotation(eaf_file)
-        results.extend(result)
+        result = get_total(eaf_file)
+        if result:
+            results.extend(result)
 
     # 生成JSONL文件
     save_to_jsonl(results, '/data0/tc_workspace/internlm/code/VideoLLaMA3/data/child_llama3.jsonl')

@@ -21,14 +21,16 @@ echo "WORLD_SIZE: $WORLD_SIZE"
 echo "NPROC_PER_NODE: $NPROC_PER_NODE"
 
 # Training Arguments
-GLOBAL_BATCH_SIZE=128
-LOCAL_BATCH_SIZE=2
+GLOBAL_BATCH_SIZE=64
+LOCAL_BATCH_SIZE=1
 GRADIENT_ACCUMULATION_STEPS=$[$GLOBAL_BATCH_SIZE/($WORLD_SIZE*$NPROC_PER_NODE*$LOCAL_BATCH_SIZE)]
 echo $GRADIENT_ACCUMULATION_STEPS
 
 # Log Arguments
 export WANDB_PROJECT=videollama3_qwen2.5_2b
-PRECEDING_RUN_NAME=stage_3
+export NCCL_P2P_DISABLE=1
+export NCCL_IB_DISABLE=1
+PRECEDING_RUN_NAME=stage_4
 RUN_NAME=stage_4
 DATA_DIR=/data0/tc_workspace/internlm/code/VideoLLaMA3/data
 OUTP_DIR=work_dirs
@@ -44,7 +46,7 @@ torchrun --nnodes $WORLD_SIZE \
     --model_path /data0/tc_workspace/internlm/model/VideoLLaMA3-2B \
     --vision_encoder DAMO-NLP-SG/SigLIP-NaViT \
     --mm_projector_type mlp2x_gelu \
-    --data_path ${DATA_DIR}/child_llama3_test.jsonl \
+    --data_path ${DATA_DIR}/child_llama3_pre_train.jsonl \
     --data_folder ${DATA_DIR} \
     --image_merge_size 2 \
     --video_merge_size 2 \
@@ -62,7 +64,7 @@ torchrun --nnodes $WORLD_SIZE \
     --gradient_accumulation_steps $GRADIENT_ACCUMULATION_STEPS \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
-    --save_steps 1000 \
+    --save_steps 500 \
     --save_total_limit 2 \
     --llm_lr 1e-5 \
     --mm_projector_lr 1e-5 \
@@ -72,7 +74,7 @@ torchrun --nnodes $WORLD_SIZE \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --gradient_checkpointing True \
-    --dataloader_num_workers 16 \
+    --dataloader_num_workers 8 \
     --report_to tensorboard \
     --run_name $RUN_NAME \
     --dataset_cache_dir /data0/tc_workspace/data/vlm_data/child_data/.cache
