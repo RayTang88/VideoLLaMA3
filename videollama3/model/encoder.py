@@ -215,6 +215,7 @@ class Videollama3VisionEncoder(nn.Module):
 
         # merge_size is set to 1 by default, because STAGE1, STAGE1.5, STAGE2 are trained with merge_size=1
         # for stage 3, the merge_size is set to 2 by argments. 
+        # self.vision_encoder_name
         self.image_processor = Videollama3ImageProcessor.from_pretrained(self.vision_encoder_name)
 
         # merge_size is fixed to 1 for STAGE1, STAGE1.5, STAGE2, STAGE3 in encoder and can be modified in connector.

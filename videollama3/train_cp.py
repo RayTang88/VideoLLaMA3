@@ -28,6 +28,7 @@ import traceback
 from packaging import version
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence
+import pdb
 
 # torch-related packages
 # NOTE: torch must be imported before transformers. Otherwise, `Segmentation fault (core dumped)` will occur.
@@ -80,44 +81,48 @@ def int_with_none(value):
         return None
     return int(value)
 
-
+    
 @dataclass
 class ModelArguments:
     # LLM Arguments
-    model_type: Optional[str] = field(default="videollama3", metadata={"help": "Model type selected in the list: " + ", ".join(VLLMs.keys())})
-    model_path: Optional[str] = field(default="lmsys/vicuna-7b-v1.5")
+    model_type: Optional[str] = field(default="videollama3_qwen2", metadata={"help": "Model type selected in the list: " + ", ".join(VLLMs.keys())})
+    model_path: Optional[str] = field(default="/home/tc_workspace/model/VideoLLaMA3-2B_local")
     version: Optional[str] = field(default="v1", metadata={"help": "Version of the conversation template."})
     freeze_backbone: bool = field(default=False, metadata={"help": "Whether to freeze the LLM backbone."})
     # Connector Arguments
-    mm_projector_type: Optional[str] = field(default='linear')
+    mm_projector_type: Optional[str] = field(default='mlp2x_gelu')
     pretrain_mm_projector: Optional[str] = field(default=None)
     # Vision tower Arguments
-    vision_encoder: Optional[str] = field(default=None)
+    vision_encoder: Optional[str] = field(default="/home/tc_workspace/model/SigLIP-NaViT")
     mm_vision_select_layer: Optional[int] = field(default=-1)
     mm_vision_select_feature: Optional[str] = field(default="patch")
     mm_attn_implementation: Optional[str] = field(default="flash_attention_2")
     # Token downsampling Arguments
-    use_token_compression: Optional[bool] = field(default=False)
+    use_token_compression: Optional[bool] = field(default=True)
+
+
+
 
 
 @dataclass
 class DataArguments:
     # Path Arguments
-    data_path: List[str] = field(default=None, metadata={"help": "Path to the training data."})
-    # image_folder: Optional[str] = field(default=None)
+    data_path: List[str] = field(default_factory=lambda: ["/home/tc_workspace/code/VideoLLaMA3/data/child_llama3_pre_train.jsonl"], metadata={"help": "Path to the training data."})    # image_folder: Optional[str] = field(default=None)
     # video_folder: Optional[str] = field(default=None)
-    data_folder: Optional[str] = field(default=None)
+    data_folder: Optional[str] = field(default="/home/tc_workspace/code/VideoLLaMA3/data")
+    # data_path: List[str] = field(default=["/home/tc_workspace/code/VideoLLaMA3/data/child_llama3_pre_train.jsonl"])
+
     # Loading Arguments
     is_multimodal: bool = False
-    fps: Optional[int] = field(default=None)
-    max_frames: Optional[int_with_none] = field(default=None)
+    fps: Optional[int] = field(default=1)
+    max_frames: Optional[int_with_none] = field(default=180)
     # Preprocess Arguments
-    image_merge_size: Optional[int] = field(default=1)
-    video_merge_size: Optional[int] = field(default=1)
+    image_merge_size: Optional[int] = field(default=2)
+    video_merge_size: Optional[int] = field(default=2)
     mm_max_length: Optional[int] = field(default=10240)
     image_aspect_ratio: str = 'square'
     use_batch_flattening: bool = field(default=True, metadata={"help": "Whether to flatten the in-batch sequences of variable lengths."})
-    dataset_cache_dir: Optional[str] = field(default=None)
+    dataset_cache_dir: Optional[str] = field(default="/home/tc_workspace/data/children_actions/.cache")
 
 
 @dataclass
@@ -127,13 +132,13 @@ class TrainingArguments(transformers.TrainingArguments):
 
     optim: str = field(default="adamw_torch")
     # Training learning rate Arguments
-    vision_encoder_lr: Optional[float] = None
-    mm_projector_lr: Optional[float] = None
-    llm_lr: Optional[float] = None
+    vision_encoder_lr: Optional[float] = 2e-6
+    mm_projector_lr: Optional[float] = 1e-6
+    llm_lr: Optional[float] = 1e-5
     # Training Data Arguments
     group_by_modality_length: bool = field(default=False)
     model_max_length: int = field(
-        default=512,
+        default=16384,
         metadata={
             "help":
             "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
@@ -158,6 +163,10 @@ class TrainingArguments(transformers.TrainingArguments):
     lora_dropout: float = 0.05
     lora_weight_path: str = ""
     lora_bias: str = "none"
+    output_dir: str = "/home/tc_workspace/code/VideoLLaMA3/work_dirs"
+    bf16: bool = True
+    tf32: bool = True
+    fp16: bool = False
 
 
 class LazySupervisedDataset(Dataset):
@@ -485,6 +494,7 @@ def train(attn_implementation=None):
         print(training_args)
 
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
+    # compute_dtype = torch.float16
     model_args.torch_dtype = compute_dtype
 
     bnb_model_from_pretrained_args = {}
@@ -510,6 +520,10 @@ def train(attn_implementation=None):
         ))
 
     config = VLLMConfigs[model_args.model_type].from_pretrained(model_args.model_path)
+    # config.use_bfloat16=True
+    # config.torch_dtype=torch.bfloat16
+    # config.vision_encoder_config['use_bfloat16'] = True
+    # config.vision_encoder_config['torch_dtype'] = torch.bfloat16
 
     config._attn_implementation = attn_implementation
     config.use_token_compression = model_args.use_token_compression
@@ -665,32 +679,30 @@ def train(attn_implementation=None):
         data_module = make_flattening_supervised_data_module(vlprocessor=vlprocessor, data_args=data_args)
     else:
         data_module = make_supervised_data_module(vlprocessor=vlprocessor, data_args=data_args)
-    try:
-        # select a Trainer
-        trainer = VideoLLaMA3Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
 
-        if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
-            trainer.train(resume_from_checkpoint=True)
-        else:
-            trainer.train()
-        trainer.save_state()
+    # select a Trainer
+    trainer = VideoLLaMA3Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
 
-        model.config.use_cache = True
+    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
+        trainer.train(resume_from_checkpoint=True)
+    else:
+        trainer.train()
+    trainer.save_state()
 
-        if training_args.lora_enable:
-            state_dict = get_peft_state_maybe_zero_3(model.named_parameters(), training_args.lora_bias)
-            non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.named_parameters())
-            if training_args.local_rank == 0 or training_args.local_rank == -1:
-                model.config.save_pretrained(training_args.output_dir)
-                model.save_pretrained(training_args.output_dir, state_dict=state_dict)
-                torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, 'non_lora_trainables.bin'))
-        else:
-            safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
-    except Exception as e:
-        print(f"算术异常: {e}")
-        print("当前张量值:")
-        print("梯度状态:", model.weight.grad)
+    model.config.use_cache = True
+
+    if training_args.lora_enable:
+        state_dict = get_peft_state_maybe_zero_3(model.named_parameters(), training_args.lora_bias)
+        non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.named_parameters())
+        if training_args.local_rank == 0 or training_args.local_rank == -1:
+            model.config.save_pretrained(training_args.output_dir)
+            model.save_pretrained(training_args.output_dir, state_dict=state_dict)
+            torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, 'non_lora_trainables.bin'))
+    else:
+        safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
 
 
 if __name__ == "__main__":
     train(attn_implementation="flash_attention_2")
+    # train()
+
