@@ -1,38 +1,17 @@
 import json
-import pyarrow.json as paj
 
-def validate_jsonl(file_path):
-    with open(file_path, 'r') as f:
-        for i, line in enumerate(f, 1):
-            try:
-                json.loads(line)
-            except json.JSONDecodeError as e:
-                print(f"❌ 第 {i} 行错误: {e}")
-                print("问题行内容:", line.strip())
-                if i == 1000:
-                    return
-            except Exception as e:
-                print(f"⚠️ 第 {i} 行异常: {str(e)}")
-
-# validate_jsonl('/data0/tc_workspace/internlm/code/VideoLLaMA3/data/child_llama3.jsonl')
-
-import json
-from jsonschema import validate
-
-import json
-import re
-
-def fix_jsonl(input_path, output_path):
+def process_jsonl(input_path, output_path):
+    # 创建新的JSONL文件
     with open(input_path, 'r') as fin, open(output_path, 'w') as fout:
         for line in fin:
-            # 修复键名引号问题
-            fixed = re.sub(r'([{,]\s*)(\w+)(\s*:)', r'\1"\2"\3', line)
-            # 转义双引号
-            fixed = fixed.replace('"', '\\"')
-            try:
-                json.loads(fixed)  # 二次验证
-                fout.write(fixed + '\n')
-            except:
-                continue
+            data = json.loads(line)
+            # 遍历conversations数组
+            for conv in data.get('conversations', []):
+                # 统一value字段类型为字符串
+                if isinstance(conv['value'], (list, dict)):
+                    conv['value'] = json.dumps(conv['value'])  # 序列化数组/字典
+            # 写回处理后的数据
+            fout.write(json.dumps(data) + '\n')
 
-fix_jsonl('/data0/tc_workspace/internlm/code/VideoLLaMA3/data/child_llama3_test.jsonl', '/data0/tc_workspace/internlm/code/VideoLLaMA3/data/child_llama3_test_fixed.jsonl')
+# 使用示例
+process_jsonl('/home/tc_workspace/code/VideoLLaMA3/data/child_llama3_post_test1.jsonl', '/home/tc_workspace/code/VideoLLaMA3/data/child_llama3_post_test2.jsonl')
