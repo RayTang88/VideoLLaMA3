@@ -95,25 +95,51 @@ def parse_annotation(eaf_file):
     return annotations
 
 def save_jsonl(data, output_file):
-    with open(output_file, 'w', encoding='utf-8') as f:
+    with open(output_file, 'a', encoding='utf-8') as f:
         for item in data:
             # 序列化时保留非ASCII字符[4](@ref)
             json_line = json.dumps(item, ensure_ascii=False, separators=(',', ':'))
             f.write(json_line + '\n')  # 按JSONL规范添加换行符[3](@ref)
             # f.write(json.dumps(item, indent=2, ensure_ascii=False))
 
+def get_existing_ids(train_json, val_json):
+    existing_ids = []
+    for json_path in [train_json, val_json]:
+        with open(json_path, 'r', encoding='utf-8') as fin:
+            # 逐行解析JSONL
+            for line in fin:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                try:
+                    data = json.loads(line)
+                    # 检查ID字段是否存在
+                    if 'id' in data and isinstance(data['id'], str):
+                        current_id = data['id']
+                        existing_ids.append(current_id)
+                    
+                except json.JSONDecodeError:
+                    print(f"无效JSON格式: {line[:50]}...")
+    return existing_ids                
+            
 def find_eaf_files(root_dir):
     """
     递归查找指定目录下所有.eaf文件
     :param root_dir: 要搜索的根目录路径
     :return: 包含完整路径的.eaf文件列表
     """
+    train_json = '/home/tc_workspace/code/VideoLLaMA3/data/child_llama3_post_train.jsonl'
+    test_json = '/home/tc_workspace/code/VideoLLaMA3/data/child_llama3_post_test.jsonl'
+    existing_ids = get_existing_ids(train_json, test_json)
     eaf_files = []
     for dirpath, dirnames, filenames in os.walk(root_dir):
         for filename in filenames:
             if filename.lower().endswith('.eaf'):
-                full_path = os.path.join(dirpath, filename)
-                eaf_files.append(full_path)
+                if not filename[:-4] in existing_ids:
+                    full_path = os.path.join(dirpath, filename)
+                    eaf_files.append(full_path)
+                    existing_ids.append(filename[:-4])
     return eaf_files 
 
 def split_dataset(data):
@@ -240,7 +266,7 @@ def get_total(eaf_file, vllm_classs):
         },
         {
             "from": "gpt",
-            "value": values
+            "value": str(values)
         }
     ]  
     conversations.extend(behavior_list)
@@ -305,6 +331,7 @@ if __name__ == "__main__":
                 results.extend(result)
                 if n%10==0:    
                     save_to_jsonl(results, '/home/tc_workspace/code/VideoLLaMA3/data/child_llama3.jsonl')  
+                    results = []
                 n+=1  
         except Exception as e:
             print("------e", e)
